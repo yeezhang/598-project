@@ -94,9 +94,10 @@ class RBM(object):
             # create shared variable for hidden units bias
             hbias = theano.shared(
                 value=numpy.zeros(
-                    n_hidden,
+                    (1, n_hidden, 26, 26),
                     dtype=theano.config.floatX
                 ),
+                broadcastable=(True, False, False, False),
                 name='hbias',
                 borrow=True
             )
@@ -105,9 +106,10 @@ class RBM(object):
             # create shared variable for visible units bias
             vbias = theano.shared(
                 value=numpy.zeros(
-                    (1, n_visible, 28, 28)
+                    (1, n_visible, 28, 28),
                     dtype=theano.config.floatX
                 ),
+                broadcastable=(True, False, False, False),
                 name='vbias',
                 borrow=True
             )
@@ -131,11 +133,11 @@ class RBM(object):
 
     def free_energy(self, v_sample):
         ''' Function to compute the free energy '''
-        conv_out = conv.conv2d(input=v_sample, filters=self.W, border_mode='full')
+        conv_out = conv.conv2d(input=v_sample, filters=self.W, border_mode='valid')
 
         wx_b = conv_out + self.hbias
-        vbias_term = T.dot(v_sample, self.vbias)
-        hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=1)
+        vbias_term = T.sum(v_sample * self.vbias, axis=[1, 2, 3])
+        hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=[1, 2, 3])
         return -hidden_term - vbias_term
 
     def propup(self, vis):
@@ -446,14 +448,14 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
             mean_cost += [train_rbm(batch_index)]
 
         print 'Training epoch %d, cost is ' % epoch, numpy.mean(mean_cost)
-
+        """
         # Plot filters after each training epoch
         plotting_start = time.clock()
         # Construct image from the weight matrix
         image = Image.fromarray(
             tile_raster_images(
                 X=rbm.W.get_value(borrow=True).T,
-                img_shape=(28, 28),
+                img_shape=(3, 3),
                 tile_shape=(10, 10),
                 tile_spacing=(1, 1)
             )
@@ -461,10 +463,11 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
         image.save('filters_at_epoch_%i.png' % epoch)
         plotting_stop = time.clock()
         plotting_time += (plotting_stop - plotting_start)
+        """
 
     end_time = time.clock()
 
-    pretraining_time = (end_time - start_time) - plotting_time
+    pretraining_time = (end_time - start_time)
 
     print ('Training took %f minutes' % (pretraining_time / 60.))
     # end-snippet-5 start-snippet-6
