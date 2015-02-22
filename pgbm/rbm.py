@@ -15,6 +15,7 @@ import numpy
 
 import theano
 import theano.tensor as T
+from theano.tensor.nnet import conv
 import os
 
 from theano.tensor.shared_randomstreams import RandomStreams
@@ -29,9 +30,10 @@ class RBM(object):
     def __init__(
         self,
         input=None,
-        n_visible=784,
-        n_hidden=500,
+        n_visible=1,
+        n_hidden=20,
         W=None,
+        k_size=3,
         hbias=None,
         vbias=None,
         numpy_rng=None,
@@ -81,7 +83,7 @@ class RBM(object):
                 numpy_rng.uniform(
                     low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
                     high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                    size=(n_visible, n_hidden)
+                    size=(n_hidden, n_visible, k_size, k_size)
                 ),
                 dtype=theano.config.floatX
             )
@@ -103,7 +105,7 @@ class RBM(object):
             # create shared variable for visible units bias
             vbias = theano.shared(
                 value=numpy.zeros(
-                    n_visible,
+                    (1, n_visible, 28, 28)
                     dtype=theano.config.floatX
                 ),
                 name='vbias',
@@ -114,8 +116,11 @@ class RBM(object):
         self.input = input
         if not input:
             self.input = T.matrix('input')
-
+        self.input = T.reshape(self.input, (self.input.shape[0], 1, 28, 28))
         self.W = W
+        self.W_T = self.W.dimshuffle((1, 0, 2, 3)) 
+        self.W_T = self.W_T[:, :, ::-1, ::-1]
+
         self.hbias = hbias
         self.vbias = vbias
         self.theano_rng = theano_rng
@@ -126,7 +131,9 @@ class RBM(object):
 
     def free_energy(self, v_sample):
         ''' Function to compute the free energy '''
-        wx_b = T.dot(v_sample, self.W) + self.hbias
+        conv_out = conv.conv2d(input=v_sample, filters=self.W, border_mode='full')
+
+        wx_b = conv_out + self.hbias
         vbias_term = T.dot(v_sample, self.vbias)
         hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=1)
         return -hidden_term - vbias_term
@@ -142,7 +149,7 @@ class RBM(object):
         reconstruction cost function)
 
         '''
-        pre_sigmoid_activation = T.dot(vis, self.W) + self.hbias
+        pre_sigmoid_activation = conv.conv2d(input=vis, filters=self.W, border_mode='valid') + self.hbias
         return [pre_sigmoid_activation, T.nnet.sigmoid(pre_sigmoid_activation)]
 
     def sample_h_given_v(self, v0_sample):
@@ -170,7 +177,7 @@ class RBM(object):
         reconstruction cost function)
 
         '''
-        pre_sigmoid_activation = T.dot(hid, self.W.T) + self.vbias
+        pre_sigmoid_activation = conv.conv2d(input=hid, filters=self.W_T, border_mode='full') + self.vbias
         return [pre_sigmoid_activation, T.nnet.sigmoid(pre_sigmoid_activation)]
 
     def sample_v_given_h(self, h0_sample):
@@ -359,7 +366,7 @@ class RBM(object):
 def test_rbm(learning_rate=0.1, training_epochs=15,
              dataset='mnist.pkl.gz', batch_size=20,
              n_chains=20, n_samples=10, output_folder='rbm_plots',
-             n_hidden=500):
+             n_hidden=10):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -395,13 +402,13 @@ def test_rbm(learning_rate=0.1, training_epochs=15,
 
     # initialize storage for the persistent chain (state = hidden
     # layer of chain)
-    persistent_chain = theano.shared(numpy.zeros((batch_size, n_hidden),
+    persistent_chain = theano.shared(numpy.zeros((batch_size, n_hidden, 26, 26),
                                                  dtype=theano.config.floatX),
                                      borrow=True)
 
     # construct the RBM class
-    rbm = RBM(input=x, n_visible=28 * 28,
-              n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
+    rbm = RBM(input=x, n_visible=1,
+              n_hidden=n_hidden, k_size=3, numpy_rng=rng, theano_rng=theano_rng)
 
     # get the cost and the gradient corresponding to one step of CD-15
     cost, updates = rbm.get_cost_updates(lr=learning_rate,
